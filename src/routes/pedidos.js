@@ -1,234 +1,198 @@
 import express from 'express';
-import { supabase } from '../index.js';
-import { generalLimiter, pedidosLimiter } from '../middleware/rateLimiter.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import { requireAuth } from '../middleware/auth.js';
+import { supabase } from '../lib/supabaseClient.js'; 
+import { generalLimiter } from '../middleware/rateLimiter.js';
+import nodemailer from 'nodemailer';
 
 const router = express.Router();
 
-// POST - Crear nuevo pedido
-router.post(
-  '/',
-  pedidosLimiter,
-  asyncHandler(async (req, res) => {
-    const { usuario_id, items, total, observaciones } = req.body;
+// ============================================================
+// CONFIGURACIÓN DE CORREO (NODEMAILER)
+// ============================================================
+// ⚠️ RECUERDA: Si usas Gmail, usa la "Contraseña de Aplicación", no tu pass normal.
+const transporter = nodemailer.createTransport({
+  service: 'gmail', 
+  auth: {
+    user: '2301080184@undc.edu.pe', // <--- CAMBIA ESTO
+    pass: 'vqml fxkl vqce pxsg' // <--- CAMBIA ESTO
+  }
+});
 
-    // Validaciones
-    if (!usuario_id || isNaN(usuario_id)) {
-      return res.status(400).json({ error: 'Usuario inválido' });
+// Función auxiliar para generar código (Ej: P-123456)
+function generarCodigo() {
+  return `P-${Date.now().toString().slice(-6)}`;
+}
+
+// Función auxiliar para enviar el correo
+async function enviarNotificacionCambioEstado(email, nombreCliente, nroPedido, nuevoEstado) {
+  try {
+    const asunto = `Actualización de tu pedido ${nroPedido} - El Tambo Cañetano`;
+    let mensaje = '';
+
+    if (nuevoEstado === 'confirmado') {
+      mensaje = `Hola ${nombreCliente}, ¡Buenas noticias! Tu pedido <strong>${nroPedido}</strong> ha sido confirmado y se está preparando en cocina. 👨‍🍳🍳`;
+    } else if (nuevoEstado === 'entregado') {
+      mensaje = `Hola ${nombreCliente}, Tu pedido <strong>${nroPedido}</strong> ha sido entregado/servido. ¡Esperamos que lo disfrutes! 🍽️😋`;
     }
 
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Carrito vacío' });
-    }
-
-    if (!total || isNaN(total) || total <= 0) {
-      return res.status(400).json({ error: 'Total inválido' });
-    }
-
-    // Verificar que usuario existe
-    const { data: usuario, error: errorUsuario } = await supabase
-      .from('usuarios')
-      .select('id')
-      .eq('id', usuario_id)
-      .single();
-
-    if (errorUsuario || !usuario) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
-    }
-
-    // Generar número único de pedido
-    const numeroPedido = `PED-${Date.now()}-${Math.random()
-      .toString(36)
-      .substr(2, 5)
-      .toUpperCase()}`;
-
-    // Crear pedido en transacción
-    try {
-      const { data: pedido, error: errorPedido } = await supabase
-        .from('pedidos')
-        .insert([
-          {
-            usuario_id,
-            numero_pedido: numeroPedido,
-            total: parseFloat(total),
-            observaciones: observaciones || null,
-            estado: 'pendiente',
-          },
-        ])
-        .select()
-        .single();
-
-      if (errorPedido) throw errorPedido;
-
-      // Insertar detalles del pedido
-      const detalles = items.map(item => ({
-        pedido_id: pedido.id,
-        producto_id: item.id,
-        cantidad: item.cantidad,
-        precio_unitario: parseFloat(item.precio),
-        subtotal: parseFloat(item.subtotal),
-      }));
-
-      const { error: errorDetalles } = await supabase
-        .from('detalles_pedidos')
-        .insert(detalles);
-
-      if (errorDetalles) throw errorDetalles;
-
-      res.status(201).json({
-        message: 'Pedido creado exitosamente',
-        pedido: {
-          id: pedido.id,
-          numero_pedido: pedido.numero_pedido,
-          total: pedido.total,
-          estado: pedido.estado,
-          items,
-        },
+    if (mensaje) {
+      await transporter.sendMail({
+        from: '"El Tambo Cañetano" <noreply@eltambo.com>',
+        to: email,
+        subject: asunto,
+        html: `<h2>Estado Actualizado</h2><p>${mensaje}</p>`
       });
-    } catch (error) {
-      console.error('[ERROR] al crear pedido:', error);
-      throw error;
+      console.log(`📧 Correo enviado a ${email}`);
     }
-  })
-);
+  } catch (error) {
+    console.error("Error enviando correo:", error);
+  }
+}
 
-// GET - Obtener pedidos de un usuario
-router.get(
-  '/usuario/:usuario_id',
-  generalLimiter,
-  asyncHandler(async (req, res) => {
-    const { usuario_id } = req.params;
-    const { estado } = req.query;
+// ============================================================
+// 1. POST: CREAR UN PEDIDO
+// ============================================================
+router.post('/', generalLimiter, async (req, res) => {
+  console.log('📦 [BACKEND] Creando pedido...');
 
-    if (isNaN(usuario_id)) {
-      return res.status(400).json({ error: 'Usuario ID inválido' });
+  try {
+    const { usuario_id, total, metodo_pago, direccion_envio, items, email_cliente } = req.body;
+
+    // Validar datos básicos
+    if (!usuario_id || !items || items.length === 0) {
+        return res.status(400).json({ error: 'Faltan datos del pedido' });
     }
 
-    let query = supabase
+    const datosPedido = {
+      usuario_id,
+      total,
+      estado: 'pendiente',
+      observaciones: direccion_envio, // Aquí guardamos la Mesa/Hora
+      numero_pedido: generarCodigo(),
+      fecha_pedido: new Date()
+    };
+
+    // 1. Insertar Pedido
+    const { data: pedido, error: errorPedido } = await supabase
       .from('pedidos')
-      .select('*, detalles_pedidos(*, productos(nombre, precio))')
-      .eq('usuario_id', parseInt(usuario_id))
-      .order('fecha_pedido', { ascending: false });
-
-    if (estado) {
-      query = query.eq('estado', estado);
-    }
-
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    res.json(data || []);
-  })
-);
-
-// GET - Obtener un pedido específico
-router.get(
-  '/:id',
-  generalLimiter,
-  asyncHandler(async (req, res) => {
-    const { id } = req.params;
-
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-
-    const { data, error } = await supabase
-      .from('pedidos')
-      .select('*, detalles_pedidos(*, productos(nombre, precio))')
-      .eq('id', parseInt(id))
-      .single();
-
-    if (error) throw error;
-
-    if (!data) {
-      return res.status(404).json({ error: 'Pedido no encontrado' });
-    }
-
-    res.json(data);
-  })
-);
-
-// GET - Obtener todos los pedidos (solo admin)
-router.get(
-  '/',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const { estado, page = 1, limit = 10 } = req.query;
-
-    let query = supabase
-      .from('pedidos')
-      .select('*, usuarios(nombre, email), detalles_pedidos(cantidad)', {
-        count: 'exact',
-      });
-
-    if (estado) {
-      query = query.eq('estado', estado);
-    }
-
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10));
-    const offset = (pageNum - 1) * limitNum;
-
-    query = query
-      .range(offset, offset + limitNum - 1)
-      .order('fecha_pedido', { ascending: false });
-
-    const { data, error, count } = await query;
-
-    if (error) throw error;
-
-    res.json({
-      data,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total: count,
-        pages: Math.ceil(count / limitNum),
-      },
-    });
-  })
-);
-
-// PUT - Actualizar estado del pedido (solo admin)
-router.put(
-  '/:id/estado',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const { estado } = req.body;
-
-    const estadosValidos = [
-      'pendiente',
-      'confirmado',
-      'preparando',
-      'listo',
-      'cancelado',
-    ];
-
-    if (!estadosValidos.includes(estado)) {
-      return res.status(400).json({ error: 'Estado inválido' });
-    }
-
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-
-    const { data, error } = await supabase
-      .from('pedidos')
-      .update({ estado })
-      .eq('id', parseInt(id))
+      .insert([datosPedido])
       .select()
       .single();
 
+    if (errorPedido) throw errorPedido;
+
+    // 2. Insertar Detalles
+    const detalles = items.map(item => ({
+      pedido_id: pedido.id,
+      producto_id: item.producto_id,
+      cantidad: item.cantidad,
+      precio_unitario: item.precio_unitario || item.precio,
+      subtotal: item.cantidad * (item.precio_unitario || item.precio)
+    }));
+
+    const { error: errorDetalles } = await supabase
+      .from('detalles_pedidos')
+      .insert(detalles);
+
+    if (errorDetalles) throw errorDetalles;
+
+    // 3. Registrar pago inicial (si aplica)
+    if (metodo_pago !== 'tarjeta') {
+      await supabase.from('pagos').insert([{
+          pedido_id: pedido.id,
+          monto: total,
+          estado: 'pendiente',
+          metodo_pago: metodo_pago,
+          fecha_pago: new Date()
+      }]);
+    }
+
+    res.status(201).json({ message: 'Pedido creado exitosamente', id: pedido.id });
+
+  } catch (error) {
+    console.error('💥 Error creando pedido:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// 2. GET: LEER PEDIDO POR ID
+// ============================================================
+router.get('/:id', generalLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const { data, error } = await supabase
+      .from('pedidos')
+      .select(`
+        *,
+        detalles_pedidos (
+          cantidad,
+          precio_unitario,
+          subtotal,
+          productos ( nombre, imagen_url )
+        )
+      `)
+      .eq('id', parseInt(id))
+      .single();
+
+    if (error) {
+        return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    res.json(data);
+
+  } catch (error) {
+    console.error('💥 Error obteniendo pedido:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// 3. PUT: ACTUALIZAR ESTADO (ADMIN)
+// ============================================================
+router.put('/:id', generalLimiter, async (req, res) => {
+  const { id } = req.params;
+  const { estado } = req.body;
+
+  console.log(`🔄 [BACKEND] Actualizando pedido ${id} a estado: ${estado}`);
+
+  try {
+    // 1. Actualizar en Supabase
+    const { data: pedidoActualizado, error } = await supabase
+      .from('pedidos')
+      .update({ 
+        estado: estado,
+        updated_at: new Date() 
+      })
+      .eq('id', id)
+      .select(`
+        *,
+        usuarios ( nombre, email )
+      `)
+      .single();
+
     if (error) throw error;
 
-    res.json({
-      message: 'Estado del pedido actualizado',
-      pedido: data,
-    });
-  })
-);
+    // 2. Enviar Notificación por Correo
+    if (pedidoActualizado.usuarios && pedidoActualizado.usuarios.email) {
+      await enviarNotificacionCambioEstado(
+        pedidoActualizado.usuarios.email,
+        pedidoActualizado.usuarios.nombre,
+        pedidoActualizado.numero_pedido,
+        estado
+      );
+    }
+
+    res.json({ message: 'Estado actualizado', pedido: pedidoActualizado });
+
+  } catch (error) {
+    console.error('💥 Error actualizando pedido:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 export default router;

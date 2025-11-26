@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../index.js';
+import { supabase } from '../lib/supabaseClient.js';
 import { generalLimiter } from '../middleware/rateLimiter.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { validateCantidad } from '../middleware/validation.js';

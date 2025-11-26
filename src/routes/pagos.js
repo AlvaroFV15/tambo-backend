@@ -1,6 +1,6 @@
 import express from 'express';
 import axios from 'axios';
-import { supabase } from '../index.js';
+import { supabase } from '../lib/supabaseClient.js';
 import { generalLimiter, pagosLimiter } from '../middleware/rateLimiter.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
