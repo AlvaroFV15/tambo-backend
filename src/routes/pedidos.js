@@ -11,8 +11,8 @@ const router = express.Router();
 // ⚠️ RECUERDA: Si usas Gmail, usa la "Contraseña de Aplicación", no tu pass normal.
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 465, // Puerto seguro SSL (El que mejor funciona en la nube)
-  secure: true, // true para puerto 465
+  port: 587, // Puerto seguro SSL (El que mejor funciona en la nube)
+  secure: false, // true para puerto 465
   auth: {
     user: process.env.EMAIL_USER, // Usamos las variables de Render
     pass: process.env.EMAIL_PASS  // Usamos las variables de Render
