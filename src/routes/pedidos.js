@@ -10,10 +10,16 @@ const router = express.Router();
 // ============================================================
 // ⚠️ RECUERDA: Si usas Gmail, usa la "Contraseña de Aplicación", no tu pass normal.
 const transporter = nodemailer.createTransport({
-  service: 'gmail', 
+  host: "smtp.gmail.com",
+  port: 465, // Puerto seguro SSL (El que mejor funciona en la nube)
+  secure: true, // true para puerto 465
   auth: {
-    user: '2301080184@undc.edu.pe', // <--- CAMBIA ESTO
-    pass: 'vqmlfxklvqcepxsg' // <--- CAMBIA ESTO
+    user: process.env.EMAIL_USER, // Usamos las variables de Render
+    pass: process.env.EMAIL_PASS  // Usamos las variables de Render
+  },
+  // Opciones vitales para evitar Timeouts en la nube:
+  tls: {
+    rejectUnauthorized: false // Ayuda si hay problemas de certificados
   }
 });
 
