@@ -12,13 +12,18 @@ const router = express.Router();
 // ============================================================
 // ⚠️ ATENCIÓN: Rellena esto con tu correo y contraseña de aplicación
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: "smtp.gmail.com",
+  port: 587, // Puerto seguro SSL (El que mejor funciona en la nube)
+  secure: false, // true para puerto 465
   auth: {
-    user: '2301080184@undc.edu.pe',         // <--- PON TU CORREO AQUÍ
-    pass: 'vqml fxkl vqce pxsg' // <--- PON TU CONTRASEÑA DE APP AQUÍ
+    user: process.env.EMAIL_USER, // Usamos las variables de Render
+    pass: process.env.EMAIL_PASS  // Usamos las variables de Render
+  },
+  // Opciones vitales para evitar Timeouts en la nube:
+  tls: {
+    rejectUnauthorized: false // Ayuda si hay problemas de certificados
   }
 });
-
 // Función auxiliar para enviar el correo (No bloquea el sistema si falla)
 async function enviarNotificacionCambioEstado(email, nombreCliente, nroPedido, nuevoEstado) {
   try {
