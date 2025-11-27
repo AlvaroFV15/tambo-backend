@@ -11,6 +11,9 @@ const router = express.Router();
 // CONFIGURACIÓN DE CORREO (NODEMAILER)
 // ============================================================
 // ⚠️ ATENCIÓN: Rellena esto con tu correo y contraseña de aplicación
+console.log("📧 INTENTO DE ENVÍO:");
+console.log("   User:", process.env.EMAIL_USER ? "Cargado Correctamente" : "VACÍO/ERROR");
+console.log("   Pass:", process.env.EMAIL_PASS ? "Cargado Correctamente" : "VACÍO/ERROR");
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 587, // Puerto seguro SSL (El que mejor funciona en la nube)
@@ -22,7 +25,9 @@ const transporter = nodemailer.createTransport({
   // Opciones vitales para evitar Timeouts en la nube:
   tls: {
     rejectUnauthorized: false // Ayuda si hay problemas de certificados
-  }
+  },
+  // --- EL TRUCO MÁGICO ---
+  family: 4 // <--- ESTO FUERZA EL USO DE IPv4 (Soluciona el Timeout en Render)
 });
 // Función auxiliar para enviar el correo (No bloquea el sistema si falla)
 async function enviarNotificacionCambioEstado(email, nombreCliente, nroPedido, nuevoEstado) {

@@ -9,18 +9,23 @@ const router = express.Router();
 // CONFIGURACIÓN DE CORREO (NODEMAILER)
 // ============================================================
 // ⚠️ RECUERDA: Si usas Gmail, usa la "Contraseña de Aplicación", no tu pass normal.
+console.log("📧 INTENTO DE ENVÍO:");
+console.log("   User:", process.env.EMAIL_USER ? "Cargado Correctamente" : "VACÍO/ERROR");
+console.log("   Pass:", process.env.EMAIL_PASS ? "Cargado Correctamente" : "VACÍO/ERROR");
+
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 587, // Puerto seguro SSL (El que mejor funciona en la nube)
-  secure: false, // true para puerto 465
+  port: 587,
+  secure: false, // false para puerto 587
   auth: {
-    user: process.env.EMAIL_USER, // Usamos las variables de Render
-    pass: process.env.EMAIL_PASS  // Usamos las variables de Render
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   },
-  // Opciones vitales para evitar Timeouts en la nube:
   tls: {
-    rejectUnauthorized: false // Ayuda si hay problemas de certificados
-  }
+    rejectUnauthorized: false
+  },
+  // --- EL TRUCO MÁGICO ---
+  family: 4 // <--- ESTO FUERZA EL USO DE IPv4 (Soluciona el Timeout en Render)
 });
 
 // Función auxiliar para generar código (Ej: P-123456)
