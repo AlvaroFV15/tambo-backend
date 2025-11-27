@@ -19,31 +19,40 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================================
-// 1. MIDDLEWARES (EL ORDEN AQUÍ ES SAGRADO)
+// ⚠️ SOLUCIÓN CRÍTICA PARA RENDER (TRUST PROXY)
+// ============================================================
+// Esto arregla el error: ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+// Le dice a Express que confíe en el balanceador de carga de Render.
+app.set('trust proxy', 1);
+
+// ============================================================
+// 1. MIDDLEWARES
 // ============================================================
 
 // Seguridad básica
 app.use(helmet());
 
-// CORS (Permisos para que el Frontend hable con el Backend)
+// CORS (Configurado para aceptar Localhost Y Vercel)
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: [
+    'http://localhost:3000', 
+    process.env.FRONTEND_URL // La URL de Vercel configurada en Render
+  ],
   credentials: true, 
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 app.use(cors(corsOptions));
 
-// --- ¡ESTO ES LO QUE ARREGLA EL ERROR DE UNDEFINED! ---
-// Debe ir ANTES de las rutas. Convierte lo que llega en JSON a objetos JS.
+// Procesamiento de datos
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Log "Chismoso" (Para ver qué llega en la terminal negra)
+// Log "Chismoso"
 app.use((req, res, next) => {
-  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     console.log(`📥 [API] ${req.method} ${req.url}`);
-    console.log('   Datos:', req.body); 
+    // console.log('   Datos:', req.body); // Descomenta si necesitas depurar
   }
   next();
 });
@@ -52,14 +61,11 @@ app.use((req, res, next) => {
 // 2. RUTAS
 // ============================================================
 
-app.use('/api/admin', adminRoutes);       // Panel Admin
-app.use('/api/usuarios', usuariosRoutes); // Login/Registro Clientes
+app.use('/api/admin', adminRoutes);       
+app.use('/api/usuarios', usuariosRoutes); 
 app.use('/api/categorias', categoriasRoutes);
 app.use('/api/productos', productosRoutes);
-app.use('/api/pedidos', pedidosRoutes);   // Gestión de Pedidos
-app.use('/api/carritos', carritosRoutes);
-app.use('/api/pagos', pagosRoutes);
-app.use('/api/pedidos', pedidosRoutes);
+app.use('/api/pedidos', pedidosRoutes);   
 app.use('/api/carritos', carritosRoutes);
 app.use('/api/pagos', pagosRoutes);
 app.use('/api/reportes', reportesRoutes);
