@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
   service: 'gmail', 
   auth: {
     user: '2301080184@undc.edu.pe', // <--- CAMBIA ESTO
-    pass: 'vqml fxkl vqce pxsg' // <--- CAMBIA ESTO
+    pass: 'vqmlfxklvqcepxsg' // <--- CAMBIA ESTO
   }
 });
 
